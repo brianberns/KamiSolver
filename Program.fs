@@ -249,42 +249,55 @@ module Kami2 =
             |> Graph.Edges.addMany edges
 
     /// Attempts to solve the given graph in the given number of moves.
-    let rec solve nMoves graph =
-        assert(nMoves >= 0)
-        let nodes =
-            graph
-                |> Graph.Nodes.toList
-        let iColors =
-            nodes
-                |> Seq.map snd
-                |> Seq.distinct
-                |> Seq.toArray
-        if iColors.Length <= 1 then
-            Some []
-        elif iColors.Length > nMoves + 1 then   // still solvable?
-            None
-        else
-            let legalMoves =
-                [|
-                    for (iNode, iExistingColor) in nodes do
-                        for iColor in iColors do
-                            if iColor <> iExistingColor then
-                                yield iNode, iColor
-                |]
-            let legalMovePairs =
-                legalMoves
-                    |> Array.Parallel.map (fun (iNode, iColor) ->
-                        let graph' =
-                            graph |> fill iNode iColor
-                        (iNode, iColor), graph')
-                    |> Array.sortBy (fun (_, graph') ->
-                        graph' |> Graph.Nodes.count)
-            legalMovePairs
-                |> Seq.tryPick (fun ((iNode, iColor), graph') ->
-                    graph'
-                        |> solve (nMoves - 1)
-                        |> Option.map (fun moveList ->
-                            (iNode, iColor) :: moveList))
+    let solve nMoves graph =
+        let rec loop nMovesRemaining graph =
+            assert(nMovesRemaining >= 0)
+            assert(nMoves >= nMovesRemaining)
+            let nodes =
+                graph
+                    |> Graph.Nodes.toList
+            let iColors =
+                nodes
+                    |> Seq.map snd
+                    |> Seq.distinct
+                    |> Seq.toArray
+            if iColors.Length <= 1 then
+                Some []
+            else
+                let freedom = nMovesRemaining - iColors.Length + 1
+                if freedom < 0 then   // still solvable?
+                    None
+                else
+                    let legalMoves =
+                        [|
+                            for (iNode, iExistingColor) in nodes do
+                                for iColor in iColors do
+                                    if iColor <> iExistingColor then
+                                        yield iNode, iColor
+                        |]
+                    let legalMovePairs =
+                        legalMoves
+                            |> Array.Parallel.map (fun (iNode, iColor) ->
+                                let graph' =
+                                    graph |> fill iNode iColor
+                                (iNode, iColor), graph')
+                            |> Array.sortBy (fun (_, graph') ->
+                                graph' |> Graph.Nodes.count)
+                    legalMovePairs
+                        |> Seq.mapi (fun iMove (move, graph') ->
+                            iMove, move, graph')
+                        |> Seq.tryPick (fun (iMove, (iNode, iColor), graph') ->
+                            let level = nMoves - nMovesRemaining
+                            if level <= 1 && freedom >= 2 then
+                                printfn "Level %d: %s%4.1f%% complete"
+                                    level
+                                    (String(' ', 3 * level))
+                                    (100.0 * (float iMove) / (float legalMoves.Length))
+                            graph'
+                                |> loop (nMovesRemaining - 1)
+                                |> Option.map (fun moveList ->
+                                    (iNode, iColor) :: moveList))
+        graph |> loop nMoves
 
 [<EntryPoint>]
 let main argv =
@@ -299,9 +312,14 @@ let main argv =
     let dtStart = DateTime.Now
     match graph |> Kami2.solve nMoves with
         | Some moves ->
+            printfn ""
+            printfn "Solution:"
             for (iNode, iColor) in moves do
-                printfn "At %A: color %A" iNode iColor
-        | None -> printfn "No solution"
+                printfn "   at %A put color %A" iNode iColor
+        | None ->
+            printfn ""
+            printfn "No solution"
+    printfn ""
     printfn "%A" (DateTime.Now - dtStart)
 
     0
