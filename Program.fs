@@ -289,9 +289,9 @@ module Kami2 =
                         |> Seq.tryPick (fun (iMove, (iNode, iColor), graph') ->
                             let level = nMoves - nMovesRemaining
                             if level <= 1 && freedom >= 2 then
-                                printfn "Level %d: %s%4.1f%% complete"
-                                    level
+                                printfn "%sLevel %d: %4.1f%% complete"
                                     (String(' ', 3 * level))
+                                    level
                                     (100.0 * (float iMove) / (float legalMoves.Length))
                             graph'
                                 |> loop (nMovesRemaining - 1)
