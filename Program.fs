@@ -22,10 +22,9 @@ module Color =
                     int color.R, int color.G, int color.B)
                 |> Seq.reduce (fun (r1, g1, b1) (r2, g2, b2) ->
                     r1 + r2, g1 + g2, b1 + b2)
-        let den =
-            colors |> Array.length |> float
+        let nColors = colors |> Array.length
         let avg value =
-            int (float value / den)
+            int (float value / float nColors)
         Color.FromArgb(avg r, avg g, avg b)
 
 module Bitmap =
@@ -44,7 +43,7 @@ module Bitmap =
     /// Finds the average color near the given location in the
     /// given bitmap.
     let sample x y (bitmap : Bitmap) =
-        let delta = 10
+        let delta = 5
         [|
             for x' = (x - delta) to (x + delta) do
                 if x' >= 0 && x' < bitmap.Width then
@@ -53,7 +52,7 @@ module Bitmap =
                             yield bitmap.GetPixel(x', y')
         |] |> Color.average
 
-module Kami2 =
+module UndirectedGraph =
 
     /// Answers the indices of the nodes adjacent to the node
     /// with the given index in the given undirected graph.
@@ -73,10 +72,11 @@ module Kami2 =
     let createEdges iNode iNeighbors =
         [
             for iNeighbor in iNeighbors do
-                assert(iNeighbor <> iNode)
                 yield iNeighbor, iNode, ()
                 yield iNode, iNeighbor, ()
         ]
+
+module Kami2 =
 
     /// Functions used only to create a graph from an image.
     module private Init =
@@ -123,8 +123,8 @@ module Kami2 =
                         |> Seq.findIndex (fun color ->
                             color = paletteColor))
 
-        /// Answers triangular coordinates adjacent to the given coordinates
-        /// within the given dimensions. Example:
+        /// Answers triangular coordinates adjacent to the given
+        /// coordinates. Example:
         ///
         ///    1,1           2,1
         ///      \           /
@@ -144,7 +144,7 @@ module Kami2 =
                     yield x + 1, y
             }
 
-        /// Merges adjacent nodes of the same color in the given graph.
+        /// Merges all adjacent nodes of the same color in the given graph.
         let rec simplify graph =
 
                 // is there a pair of adjancent nodes with the same color?
@@ -153,7 +153,7 @@ module Kami2 =
                     |> Graph.Nodes.toList
                     |> Seq.tryPick (fun (iNode1, iColor1) ->
                         graph
-                            |> getNeighbors iNode1
+                            |> UndirectedGraph.getNeighbors iNode1
                             |> Seq.tryPick (fun iNode2 ->
                                 let _, iColor2 =
                                     graph
@@ -168,15 +168,16 @@ module Kami2 =
                     let iNodeKeepNeighbors =
                         [
                             yield iNodeKeep
-                            yield! graph |> getNeighbors iNodeKeep
+                            yield! graph
+                                |> UndirectedGraph.getNeighbors iNodeKeep
                         ] |> Set.ofSeq
                     let edges =
                         graph
-                            |> getNeighbors iNodeRemove
+                            |> UndirectedGraph.getNeighbors iNodeRemove
                             |> Seq.where (fun iNode ->
                                 assert(iNode <> iNodeRemove)
                                 not <| iNodeKeepNeighbors.Contains(iNode))
-                            |> createEdges iNodeKeep
+                            |> UndirectedGraph.createEdges iNodeKeep
                     graph
                         |> Graph.Nodes.remove iNodeRemove
                         |> Graph.Edges.addMany edges
@@ -186,9 +187,11 @@ module Kami2 =
     /// Constructs a graph from the given Kami2 image.
     let createGraph image nColors =
 
+            // read image
         let palette = image |> Init.getPalette nColors
         let tiles = image |> Init.getTiles palette
 
+            // create a node for each tile
         let nodes =
             tiles
                 |> Array2D.mapi (fun x y iColor ->
@@ -201,6 +204,8 @@ module Kami2 =
             nodes
                 |> Seq.map fst
                 |> Set.ofSeq
+
+            // create an edge for each pair of adjacent tiles
         let edges =
             [
                 for ((x, y), _) in nodes do
@@ -208,6 +213,8 @@ module Kami2 =
                         if iNodes.Contains(iNode) then
                             yield (x, y), iNode, ()
             ]
+
+            // create graph
         Graph.create nodes edges
             |> Init.simplify
 
@@ -217,7 +224,7 @@ module Kami2 =
             // find nodes to be replaced
         let iNodes =
             graph
-                |> getNeighbors iNode
+                |> UndirectedGraph.getNeighbors iNode
                 |> Seq.map (fun iNeighbor ->
                     graph |> Graph.Nodes.find iNeighbor)
                 |> Seq.where (fun (_, iNeighborColor) ->
@@ -230,7 +237,7 @@ module Kami2 =
         let iNeighbors =
             iNodes
                 |> Seq.collect (fun iNode ->
-                    graph |> getNeighbors iNode)
+                    graph |> UndirectedGraph.getNeighbors iNode)
                 |> Seq.where (iNodes.Contains >> not)
                 |> Seq.toArray
         assert(
@@ -242,7 +249,7 @@ module Kami2 =
 
             // merge the same-color nodes together
         let edges =
-            iNeighbors |> createEdges iNode
+            iNeighbors |> UndirectedGraph.createEdges iNode
         graph
             |> Graph.Nodes.removeMany (iNodes |> Seq.toList)
             |> Graph.Nodes.add (iNode, iColor)
@@ -250,9 +257,12 @@ module Kami2 =
 
     /// Attempts to solve the given graph in the given number of moves.
     let solve nMoves graph =
+
         let rec loop nMovesRemaining graph =
             assert(nMovesRemaining >= 0)
             assert(nMoves >= nMovesRemaining)
+
+                // find remaining colors
             let nodes =
                 graph
                     |> Graph.Nodes.toList
@@ -261,12 +271,15 @@ module Kami2 =
                     |> Seq.map snd
                     |> Seq.distinct
                     |> Seq.toArray
+
+                // done if only one color left
             if iColors.Length <= 1 then
                 Some []
             else
+                    // still solvable? must have enough moves left to eliminate all colors but one
                 let freedom = nMovesRemaining - iColors.Length + 1
-                if freedom < 0 then   // still solvable?
-                    None
+                if freedom < 0 then None
+
                 else
                     let legalMoves =
                         [|
@@ -275,15 +288,13 @@ module Kami2 =
                                     if iColor <> iExistingColor then
                                         yield iNode, iColor
                         |]
-                    let legalMovePairs =
-                        legalMoves
-                            |> Array.Parallel.map (fun (iNode, iColor) ->
-                                let graph' =
-                                    graph |> fill iNode iColor
-                                (iNode, iColor), graph')
-                            |> Array.sortBy (fun (_, graph') ->
-                                graph' |> Graph.Nodes.count)
-                    legalMovePairs
+                    legalMoves
+                        |> Array.Parallel.map (fun (iNode, iColor) ->
+                            let graph' =
+                                graph |> fill iNode iColor
+                            (iNode, iColor), graph')
+                        |> Array.sortBy (fun (_, graph') ->
+                            graph' |> Graph.Nodes.count)
                         |> Seq.mapi (fun iMove (move, graph') ->
                             iMove, move, graph')
                         |> Seq.tryPick (fun (iMove, (iNode, iColor), graph') ->
@@ -297,6 +308,7 @@ module Kami2 =
                                 |> loop (nMovesRemaining - 1)
                                 |> Option.map (fun moveList ->
                                     (iNode, iColor) :: moveList))
+
         graph |> loop nMoves
 
 [<EntryPoint>]
