@@ -264,20 +264,21 @@ module Kami2 =
             if iColors.Length > nMoves + 1 then   // still solvable?
                 None
             else
-                let legalMovePairs =
+                let legalMoves =
                     [|
                         for (iNode, iExistingColor) in nodes do
                             for iColor in iColors do
                                 if iColor <> iExistingColor then
                                     yield iNode, iColor
                     |]
-                        |> Seq.map (fun (iNode, iColor) ->
+                let legalMovePairs =
+                    legalMoves
+                        |> Array.Parallel.map (fun (iNode, iColor) ->
                             let graph' =
                                 graph |> fill iNode iColor
                             (iNode, iColor), graph')
-                        |> Seq.sortBy (fun (_, graph') ->
+                        |> Array.sortBy (fun (_, graph') ->
                             graph' |> Graph.Nodes.count)
-                        |> Seq.toArray
                 legalMovePairs
                     |> Seq.tryPick (fun ((iNode, iColor), graph') ->
                         graph'
