@@ -93,11 +93,14 @@ module Kami2 =
                             image.Height - paletteHeight,
                             paletteWidth,
                             paletteHeight))
-            Array.init nColors
-                (fun iColor ->
-                    let x = int ((float iColor + 0.5) * (float paletteWidth) / (float nColors))
-                    let y = paletteHeight / 2
-                    paletteImage |> Bitmap.sample x y)
+            [|
+                yield Color.FromArgb(220, 220, 220)   // inactive background
+                yield! Seq.init nColors
+                    (fun iColor ->
+                        let x = int ((float iColor + 0.5) * (float paletteWidth) / (float nColors))
+                        let y = paletteHeight / 2
+                        paletteImage |> Bitmap.sample x y)
+            |]
 
         /// Extracts the tiles from the given Kami2 image.
         let getTiles palette image =
@@ -131,18 +134,14 @@ module Kami2 =
         ///      /           \
         ///    1,3           2,3
         ///
-        let getAdjacentCoords x y width height =
+        let getAdjacentCoords x y =
             seq {
-                if y > 0 then
-                    yield x, y - 1
-                if y < height - 1 then
-                    yield x, y + 1
+                yield x, y - 1
+                yield x, y + 1
                 if (x + y) % 2 = 0 then
-                    if x > 0 then
-                        yield x - 1, y
+                    yield x - 1, y
                 else
-                    if x < width - 1 then
-                        yield x + 1, y
+                    yield x + 1, y
             }
 
         /// Merges adjacent nodes of the same color in the given graph.
@@ -194,18 +193,20 @@ module Kami2 =
             tiles
                 |> Array2D.mapi (fun x y iColor ->
                     (x, y), iColor)
-        let nodes =
-            nodes
                 |> Seq.cast<(int * int) * int>
+                |> Seq.where (fun (iNode, iColor) ->   // ignore background
+                    iColor > 0)
                 |> List.ofSeq
+        let iNodes =
+            nodes
+                |> Seq.map fst
+                |> Set.ofSeq
         let edges =
-            let width = tiles.GetLength(0)
-            let height = tiles.GetLength(1)
             [
-                for x = 0 to width - 1 do
-                    for y = 0 to height - 1 do
-                        for (x', y') in Init.getAdjacentCoords x y width height do
-                            yield (x, y), (x', y'), ()
+                for ((x, y), _) in nodes do
+                    for iNode in Init.getAdjacentCoords x y do
+                        if iNodes.Contains(iNode) then
+                            yield (x, y), iNode, ()
             ]
         Graph.create nodes edges
             |> Init.simplify
@@ -250,41 +251,40 @@ module Kami2 =
     /// Attempts to solve the given graph in the given number of moves.
     let rec solve nMoves graph =
         assert(nMoves >= 0)
-        if graph |> Graph.Nodes.count <= 1 then
+        let nodes =
+            graph
+                |> Graph.Nodes.toList
+        let iColors =
+            nodes
+                |> Seq.map snd
+                |> Seq.distinct
+                |> Seq.toArray
+        if iColors.Length <= 1 then
             Some []
+        elif iColors.Length > nMoves + 1 then   // still solvable?
+            None
         else
-            let nodes =
-                graph
-                    |> Graph.Nodes.toList
-            let iColors =
-                nodes
-                    |> Seq.map snd
-                    |> Seq.distinct
-                    |> Seq.toArray
-            if iColors.Length > nMoves + 1 then   // still solvable?
-                None
-            else
-                let legalMoves =
-                    [|
-                        for (iNode, iExistingColor) in nodes do
-                            for iColor in iColors do
-                                if iColor <> iExistingColor then
-                                    yield iNode, iColor
-                    |]
-                let legalMovePairs =
-                    legalMoves
-                        |> Array.Parallel.map (fun (iNode, iColor) ->
-                            let graph' =
-                                graph |> fill iNode iColor
-                            (iNode, iColor), graph')
-                        |> Array.sortBy (fun (_, graph') ->
-                            graph' |> Graph.Nodes.count)
-                legalMovePairs
-                    |> Seq.tryPick (fun ((iNode, iColor), graph') ->
-                        graph'
-                            |> solve (nMoves - 1)
-                            |> Option.map (fun moveList ->
-                                (iNode, iColor) :: moveList))
+            let legalMoves =
+                [|
+                    for (iNode, iExistingColor) in nodes do
+                        for iColor in iColors do
+                            if iColor <> iExistingColor then
+                                yield iNode, iColor
+                |]
+            let legalMovePairs =
+                legalMoves
+                    |> Array.Parallel.map (fun (iNode, iColor) ->
+                        let graph' =
+                            graph |> fill iNode iColor
+                        (iNode, iColor), graph')
+                    |> Array.sortBy (fun (_, graph') ->
+                        graph' |> Graph.Nodes.count)
+            legalMovePairs
+                |> Seq.tryPick (fun ((iNode, iColor), graph') ->
+                    graph'
+                        |> solve (nMoves - 1)
+                        |> Option.map (fun moveList ->
+                            (iNode, iColor) :: moveList))
 
 [<EntryPoint>]
 let main argv =
@@ -299,8 +299,8 @@ let main argv =
     let dtStart = DateTime.Now
     match graph |> Kami2.solve nMoves with
         | Some moves ->
-            for move in moves do
-                printfn "%A" move
+            for (iNode, iColor) in moves do
+                printfn "At %A: color %A" iNode iColor
         | None -> printfn "No solution"
     printfn "%A" (DateTime.Now - dtStart)
 
