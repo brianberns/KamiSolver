@@ -62,6 +62,7 @@
     <None Include="Puzzles\kcLcgboNMD.png" />
     <None Include="Puzzles\kIu1kIkNMD.png" />
     <None Include="Puzzles\wT2XpZqNMD.png" />
+    <None Include="Puzzles\bVnOS7X8MD.png" />
     <Content Include="packages.config" />
     <None Include="App.config" />
     <Compile Include="AssemblyInfo.fs" />
