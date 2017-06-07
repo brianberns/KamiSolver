@@ -238,6 +238,7 @@ module Kami2 =
             iNodes
                 |> Seq.collect (fun iNode ->
                     graph |> UndirectedGraph.getNeighbors iNode)
+                |> Seq.distinct
                 |> Seq.where (iNodes.Contains >> not)
                 |> Seq.toArray
         assert(
