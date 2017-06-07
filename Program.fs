@@ -208,7 +208,7 @@ module Kami2 =
             // create an edge for each pair of adjacent tiles
         let edges =
             [
-                for ((x, y), _) in nodes do
+                for x, y in iNodes do
                     for iNode in Init.getAdjacentCoords x y do
                         if iNodes.Contains(iNode) then
                             yield (x, y), iNode, ()
@@ -284,9 +284,9 @@ module Kami2 =
                 else
                     let legalMoves =
                         [|
-                            for (iNode, iExistingColor) in nodes do
+                            for (iNode, iCurColor) in nodes do
                                 for iColor in iColors do
-                                    if iColor <> iExistingColor then
+                                    if iColor <> iCurColor then
                                         yield iNode, iColor
                         |]
                     legalMoves
@@ -298,7 +298,7 @@ module Kami2 =
                             graph' |> Graph.Nodes.count)
                         |> Seq.mapi (fun iMove (move, graph') ->
                             iMove, move, graph')
-                        |> Seq.tryPick (fun (iMove, (iNode, iColor), graph') ->
+                        |> Seq.tryPick (fun (iMove, move, graph') ->
                             let level = nMoves - nMovesRemaining
                             if level <= 1 && freedom >= 2 then
                                 printfn "%sLevel %d: %4.1f%% complete"
@@ -308,7 +308,7 @@ module Kami2 =
                             graph'
                                 |> loop (nMovesRemaining - 1)
                                 |> Option.map (fun moveList ->
-                                    (iNode, iColor) :: moveList))
+                                    move :: moveList))
 
         graph |> loop nMoves
 
