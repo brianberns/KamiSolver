@@ -311,24 +311,6 @@ module Kami2 =
     /// Attempts to solve the given graph in the given number of moves.
     let solve nMoves nodeMap (graph : KamiGraph) =
 
-        let priorityMap =
-            let distances, nodeMap =
-                graph |> Graph.getDistances
-            graph
-                |> Graph.Nodes.toList
-                |> Seq.map (fun (nodeKey, _) ->
-                    let maxDist =
-                        distances.[nodeMap.[nodeKey], *] |> Seq.max
-                    let nNeighbors =
-                        graph
-                            |> UndirectedGraph.getNeighbors nodeKey
-                            |> Array.length
-                    nodeKey, maxDist, nNeighbors)
-                |> Seq.sortBy (fun (_, maxDist, nNeighbors) ->
-                    maxDist, -nNeighbors)
-                |> Seq.mapi (fun i (nodeKey, _, _) -> nodeKey, i)
-                |> Map.ofSeq
-
         let rec loop nMovesRemaining (graph : KamiGraph) =
             assert(nMovesRemaining >= 0)
             assert(nMoves >= nMovesRemaining)
@@ -341,10 +323,7 @@ module Kami2 =
                 nodes
                     |> Seq.map snd
                     |> Seq.distinct
-                    |> Seq.sort
                     |> Seq.toArray
-            let nLegalMoves =
-                nodes.Length * (colorKeys.Length - 1)
 
                 // done if only one color left
             if colorKeys.Length <= 1 then
@@ -355,39 +334,59 @@ module Kami2 =
                 if freedom < 0 then None
 
                 else
-                    let legalMoves =
-                        nodes
-                            |> Seq.sortBy (fun (nodeKey, _) ->
-                                priorityMap.[nodeKey])
-                            |> Seq.collect (fun (nodeKey, curColorKey) ->
-                                colorKeys
-                                    |> Seq.where (fun colorKey ->
-                                        colorKey <> curColorKey)
-                                    |> Seq.map (fun colorKey ->
-                                        nodeKey, colorKey))
-                    legalMoves
+                    let priorityMap =
+                        let distances, nodeMap =
+                            graph |> Graph.getDistances
+                        graph
+                            |> Graph.Nodes.toList
+                            |> Seq.map (fun (nodeKey, _) ->
+                                let maxDist =
+                                    distances.[nodeMap.[nodeKey], *] |> Seq.max
+                                let nNeighbors =
+                                    graph
+                                        |> UndirectedGraph.getNeighbors nodeKey
+                                        |> Array.length
+                                nodeKey, maxDist, nNeighbors)
+                            |> Seq.sortBy (fun (_, maxDist, nNeighbors) ->
+                                maxDist, -nNeighbors)
+                            |> Seq.mapi (fun i (nodeKey, _, _) -> nodeKey, i)
+                            |> Map.ofSeq
+                    nodes
+                        |> Seq.sortBy (fun (nodeKey, _) ->
+                            priorityMap.[nodeKey])
                         |> Seq.mapi (fun iMove move ->
                             iMove, move)
-                        |> Seq.tryPick (fun (iMove, (nodeKey, colorKey)) ->
+                        |> Seq.tryPick (fun (iMove, (nodeKey, curColorKey)) ->
                             let level = nMoves - nMovesRemaining
                             if level <= 1 && freedom >= 2 then
-                                printfn "%sLevel %d: %4.1f%% complete, node %A, color %A"
+                                printfn "%sLevel %d: %4.1f%% complete, node %A"
                                     (String(' ', 3 * level))
                                     level
-                                    (100.0 * (float iMove) / (float nLegalMoves))
+                                    (100.0 * (float iMove) / (float nodes.Length))
                                     (nodeMap |> Map.find nodeKey)
-                                    colorKey
-                            let graph', delta =
-                                graph
-                                    |> fill nodeKey colorKey
-                            if delta <= 0 then
-                                assert(delta = 0)
-                                None
-                            else
-                                graph'
-                                    |> loop (nMovesRemaining - 1)
-                                    |> Option.map (fun moveList ->
-                                        (nodeKey, colorKey) :: moveList))
+                            let moves =
+                                colorKeys
+                                    |> Seq.where (fun newColorKey ->
+                                        newColorKey <> curColorKey)
+                                    |> Seq.map (fun newColorKey ->
+                                        nodeKey, newColorKey)
+                                    |> Seq.toArray
+                            moves
+                                |> Array.Parallel.map (fun move ->
+                                    let nodeKey, newColorKey = move
+                                    let graph', delta =
+                                        graph
+                                            |> fill nodeKey newColorKey
+                                    move, graph', delta)
+                                |> Seq.tryPick (fun (move, graph', delta) ->  
+                                    if delta <= 0 then
+                                        assert(delta = 0)
+                                        None
+                                    else
+                                        graph'
+                                            |> loop (nMovesRemaining - 1)
+                                            |> Option.map (fun moveList ->
+                                                move :: moveList)))
 
         graph |> loop nMoves
 
