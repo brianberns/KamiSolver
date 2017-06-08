@@ -52,11 +52,35 @@ module Bitmap =
                             yield bitmap.GetPixel(x', y')
         |] |> Color.average
 
+module Graph =
+
+    /// https://www.wikiwand.com/en/Floyd%E2%80%93Warshall_algorithm
+    let getDistances graph =
+        let nNodes = graph |> Graph.Nodes.count
+        let result =
+            Array2D.init nNodes nNodes (fun i j ->
+                if i = j then 0
+                else 2 * nNodes)   // larger than max possible distance between two nodes
+        let nodeMap =
+            graph
+                |> Graph.Nodes.toList
+                |> Seq.mapi (fun i (key, _) -> key, i)
+                |> Map.ofSeq
+        for (key1, key2, _) in graph |> Graph.Edges.toList do
+            result.[nodeMap.[key1], nodeMap.[key2]] <- 1
+        for k = 0 to nNodes - 1 do
+            for i = 0 to nNodes - 1 do
+                for j= 0 to nNodes - 1 do
+                    let sum = result.[i, k] + result.[k, j]
+                    if result.[i, j] > sum then
+                        result.[i, j] <- sum
+        result, nodeMap
+
 module UndirectedGraph =
 
     /// Answers the keys of the nodes adjacent to the node with
     /// the given key in the given undirected graph.
-    let getNeighbors nodeKey graph =
+    let getNeighbors nodeKey (graph : Graph<_, _, _>) =
         assert(
             (graph |> Graph.Nodes.predecessors nodeKey) =
                 (graph |> Graph.Nodes.successors nodeKey))
@@ -245,7 +269,7 @@ module Kami2 =
         graph, nodeMap
 
     /// Fills the given node in the given graph with the given color.
-    let fill nodeKey colorKey (graph : KamiGraph) : KamiGraph =
+    let fill nodeKey colorKey (graph : KamiGraph) : (KamiGraph * int (*num nodes removed*)) =
 
             // find nodes to be replaced
         let nodeKeys =
@@ -275,17 +299,37 @@ module Kami2 =
                     neighborColorKey <> colorKey))
 
             // merge the same-color nodes together
-        let edges =
-            neighborKeys |> UndirectedGraph.createEdges nodeKey
-        graph
-            |> Graph.Nodes.removeMany (nodeKeys |> Seq.toList)
-            |> Graph.Nodes.add (nodeKey, colorKey)
-            |> Graph.Edges.addMany edges
+        let graph' =
+            let edges =
+                neighborKeys |> UndirectedGraph.createEdges nodeKey
+            graph
+                |> Graph.Nodes.removeMany (nodeKeys |> Seq.toList)
+                |> Graph.Nodes.add (nodeKey, colorKey)
+                |> Graph.Edges.addMany edges
+        graph', nodeKeys.Count - 1
 
     /// Attempts to solve the given graph in the given number of moves.
-    let solve nMoves graph =
+    let solve nMoves nodeMap (graph : KamiGraph) =
 
-        let rec loop nMovesRemaining graph =
+        let priorityMap =
+            let distances, nodeMap =
+                graph |> Graph.getDistances
+            graph
+                |> Graph.Nodes.toList
+                |> Seq.map (fun (nodeKey, _) ->
+                    let maxDist =
+                        distances.[nodeMap.[nodeKey], *] |> Seq.max
+                    let nNeighbors =
+                        graph
+                            |> UndirectedGraph.getNeighbors nodeKey
+                            |> Array.length
+                    nodeKey, maxDist, nNeighbors)
+                |> Seq.sortBy (fun (_, maxDist, nNeighbors) ->
+                    maxDist, -nNeighbors)
+                |> Seq.mapi (fun i (nodeKey, _, _) -> nodeKey, i)
+                |> Map.ofSeq
+
+        let rec loop nMovesRemaining (graph : KamiGraph) =
             assert(nMovesRemaining >= 0)
             assert(nMoves >= nMovesRemaining)
 
@@ -297,7 +341,10 @@ module Kami2 =
                 nodes
                     |> Seq.map snd
                     |> Seq.distinct
+                    |> Seq.sort
                     |> Seq.toArray
+            let nLegalMoves =
+                nodes.Length * (colorKeys.Length - 1)
 
                 // done if only one color left
             if colorKeys.Length <= 1 then
@@ -309,32 +356,38 @@ module Kami2 =
 
                 else
                     let legalMoves =
-                        [|
-                            for (nodeKey, curColorKey) in nodes do
-                                for colorKey in colorKeys do
-                                    if colorKey <> curColorKey then
-                                        yield nodeKey, colorKey
-                        |]
+                        nodes
+                            |> Seq.sortBy (fun (nodeKey, _) ->
+                                priorityMap.[nodeKey])
+                            |> Seq.collect (fun (nodeKey, curColorKey) ->
+                                colorKeys
+                                    |> Seq.where (fun colorKey ->
+                                        colorKey <> curColorKey)
+                                    |> Seq.map (fun colorKey ->
+                                        nodeKey, colorKey))
                     legalMoves
-                        |> Array.Parallel.map (fun (nodeKey, colorKey) ->
-                            let graph' =
-                                graph |> fill nodeKey colorKey
-                            (nodeKey, colorKey), graph')
-                        |> Array.sortBy (fun (_, graph') ->
-                            graph' |> Graph.Nodes.count)
-                        |> Seq.mapi (fun iMove (move, graph') ->
-                            iMove, move, graph')
-                        |> Seq.tryPick (fun (iMove, move, graph') ->
+                        |> Seq.mapi (fun iMove move ->
+                            iMove, move)
+                        |> Seq.tryPick (fun (iMove, (nodeKey, colorKey)) ->
                             let level = nMoves - nMovesRemaining
                             if level <= 1 && freedom >= 2 then
-                                printfn "%sLevel %d: %4.1f%% complete"
+                                printfn "%sLevel %d: %4.1f%% complete, node %A, color %A"
                                     (String(' ', 3 * level))
                                     level
-                                    (100.0 * (float iMove) / (float legalMoves.Length))
-                            graph'
-                                |> loop (nMovesRemaining - 1)
-                                |> Option.map (fun moveList ->
-                                    move :: moveList))
+                                    (100.0 * (float iMove) / (float nLegalMoves))
+                                    (nodeMap |> Map.find nodeKey)
+                                    colorKey
+                            let graph', delta =
+                                graph
+                                    |> fill nodeKey colorKey
+                            if delta <= 0 then
+                                assert(delta = 0)
+                                None
+                            else
+                                graph'
+                                    |> loop (nMovesRemaining - 1)
+                                    |> Option.map (fun moveList ->
+                                        (nodeKey, colorKey) :: moveList))
 
         graph |> loop nMoves
 
@@ -349,7 +402,7 @@ let main argv =
         // solve graph
     let nMoves = argv.[2] |> Int32.Parse
     let dtStart = DateTime.Now
-    match graph |> Kami2.solve nMoves with
+    match graph |> Kami2.solve nMoves nodeMap with
         | Some moves ->
             printfn ""
             printfn "Solution:"
