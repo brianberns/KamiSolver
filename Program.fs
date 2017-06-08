@@ -311,6 +311,24 @@ module Kami2 =
     /// Attempts to solve the given graph in the given number of moves.
     let solve nMoves nodeMap (graph : KamiGraph) =
 
+        let priorityMap =
+            let distances, nodeMap =
+                graph |> Graph.getDistances
+            graph
+                |> Graph.Nodes.toList
+                |> Seq.map (fun (nodeKey, _) ->
+                    let maxDist =
+                        distances.[nodeMap.[nodeKey], *] |> Seq.max
+                    let nNeighbors =
+                        graph
+                            |> UndirectedGraph.getNeighbors nodeKey
+                            |> Array.length
+                    nodeKey, maxDist, nNeighbors)
+                |> Seq.sortBy (fun (_, maxDist, nNeighbors) ->
+                    maxDist, -nNeighbors)
+                |> Seq.mapi (fun i (nodeKey, _, _) -> nodeKey, i)
+                |> Map.ofSeq
+
         let rec loop nMovesRemaining (graph : KamiGraph) =
             assert(nMovesRemaining >= 0)
             assert(nMoves >= nMovesRemaining)
@@ -323,6 +341,7 @@ module Kami2 =
                 nodes
                     |> Seq.map snd
                     |> Seq.distinct
+                    |> Seq.sort
                     |> Seq.toArray
 
                 // done if only one color left
@@ -332,38 +351,14 @@ module Kami2 =
                     // still solvable? must have enough moves left to eliminate all colors but one
                 let freedom = nMovesRemaining - colorKeys.Length + 1
                 if freedom < 0 then None
-
                 else
-                    let priorityMap =
-                        let distances, nodeMap =
-                            graph |> Graph.getDistances
-                        graph
-                            |> Graph.Nodes.toList
-                            |> Seq.map (fun (nodeKey, _) ->
-                                let maxDist =
-                                    distances.[nodeMap.[nodeKey], *] |> Seq.max
-                                let nNeighbors =
-                                    graph
-                                        |> UndirectedGraph.getNeighbors nodeKey
-                                        |> Array.length
-                                nodeKey, maxDist, nNeighbors)
-                            |> Seq.sortBy (fun (_, maxDist, nNeighbors) ->
-                                maxDist, -nNeighbors)
-                            |> Seq.mapi (fun i (nodeKey, _, _) -> nodeKey, i)
-                            |> Map.ofSeq
                     nodes
-                        |> Seq.sortBy (fun (nodeKey, _) ->
-                            priorityMap.[nodeKey])
-                        |> Seq.mapi (fun iMove move ->
-                            iMove, move)
-                        |> Seq.tryPick (fun (iMove, (nodeKey, curColorKey)) ->
+                        |> Seq.sortBy (fun (nodeKey, _) -> priorityMap.[nodeKey])
+                        |> Seq.mapi (fun iNode node -> iNode, node)
+                        |> Seq.tryPick (fun (iNode, (nodeKey, curColorKey)) ->
+
                             let level = nMoves - nMovesRemaining
-                            if level <= 1 && freedom >= 2 then
-                                printfn "%sLevel %d: %4.1f%% complete, node %A"
-                                    (String(' ', 3 * level))
-                                    level
-                                    (100.0 * (float iMove) / (float nodes.Length))
-                                    (nodeMap |> Map.find nodeKey)
+
                             let moves =
                                 colorKeys
                                     |> Seq.where (fun newColorKey ->
@@ -371,14 +366,26 @@ module Kami2 =
                                     |> Seq.map (fun newColorKey ->
                                         nodeKey, newColorKey)
                                     |> Seq.toArray
+
                             moves
-                                |> Array.Parallel.map (fun move ->
+                                |> Array.Parallel.mapi (fun iMove move ->
                                     let nodeKey, newColorKey = move
                                     let graph', delta =
                                         graph
                                             |> fill nodeKey newColorKey
-                                    move, graph', delta)
-                                |> Seq.tryPick (fun (move, graph', delta) ->  
+                                    iMove, move, graph', delta)
+                                |> Seq.tryPick (fun (iMove, move, graph', delta) ->  
+
+                                    if level <= 1 && freedom >= 2 then
+                                        let nMoves =
+                                            nodes.Length * (colorKeys.Length - 1)
+                                        printfn "%sLevel %d: %4.1f%% complete, node %A, color %A"
+                                            (String(' ', 3 * level))
+                                            level
+                                            (100.0 * float ((iNode * moves.Length) + iMove) / float nMoves)
+                                            (nodeMap |> Map.find nodeKey)
+                                            (snd move)
+
                                     if delta <= 0 then
                                         assert(delta = 0)
                                         None
