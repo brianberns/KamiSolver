@@ -1,8 +1,6 @@
 ﻿open System
 open System.Drawing
 
-open Hekate
-
 module Color =
 
     /// Answers the distance between two colors
@@ -52,62 +50,170 @@ module Bitmap =
                             yield bitmap.GetPixel(x', y')
         |] |> Color.average
 
+type Graph<'label> =
+    {
+        NodeMap : Map<int, 'label>
+        Edges : bool[,]
+        NextNodeKey : int
+        MaxNodeKeys : int
+    }
+
+type Node<'label> = int * 'label
+
+type Edge = ValueTuple<int, int>
+
 module Graph =
+
+    let create<'label> maxNodeKeys =
+        {
+            NodeMap = Map.empty<int, 'label>
+            Edges =
+                Array2D.init maxNodeKeys maxNodeKeys (fun _ _ ->
+                    false)
+            NextNodeKey = 0
+            MaxNodeKeys = maxNodeKeys
+        }
+
+    let nodeCount graph =
+        graph.NodeMap.Count
+
+    let getNodes graph : seq<Node<_>> =
+        graph.NodeMap
+            |> Map.toSeq
+
+    let private getNodeKeys graph =
+        graph
+            |> getNodes
+            |> Seq.map fst
+
+    let getEdges graph : seq<Edge> =
+        let nodeKeys = graph |> getNodeKeys
+        seq {
+            for i in nodeKeys do
+                for j in nodeKeys do
+                    if graph.Edges.[i, j] then
+                        yield ValueTuple<_, _>(i, j)
+        }
+
+    let getLabel nodeKey graph =
+        graph.NodeMap.[nodeKey]
+
+    let getNeighbors nodeKey graph =
+        let slice = graph.Edges.[nodeKey, *]
+        graph
+            |> getNodeKeys
+            |> Seq.where (fun nodeKey -> slice.[nodeKey])
+
+    let getNextNodeKey graph =
+        let graph' =
+            {
+                graph with
+                    NextNodeKey = graph.NextNodeKey + 1
+            }
+        graph.NextNodeKey, graph'
+
+    let addNode nodeKey label graph =
+        assert(nodeKey >= 0)
+        assert(nodeKey < graph.MaxNodeKeys)
+        assert(graph.NodeMap.ContainsKey(nodeKey) |> not)
+        {
+            graph with
+                NodeMap =
+                    graph.NodeMap |> Map.add nodeKey label
+        }
+
+    let removeManyNodes nodeKeys graph =
+        {
+            graph with
+                NodeMap =
+                    (graph.NodeMap, nodeKeys)
+                        ||> Seq.fold (fun nodeMap nodeKey ->
+                            nodeMap |> Map.remove nodeKey)
+                Edges =
+                    let edges = graph.Edges |> Array2D.copy
+                    for nodeKey in nodeKeys do
+                        for i = 0 to graph.MaxNodeKeys - 1 do
+                            edges.[nodeKey, i] <- false
+                            edges.[i, nodeKey] <- false
+                    edges
+        }
+
+    let removeNode nodeKey graph =
+        graph |> removeManyNodes [ nodeKey ]
+
+    let addManyEdges (neighborKeyPairs : seq<int * seq<int>>) graph =
+        {
+            graph with
+                Edges =
+                    let edges = graph.Edges |> Array2D.copy   // wasteful if neighbor keys is actually empty
+                    for nodeKey, neighborKeys in neighborKeyPairs do
+                        assert(graph.NodeMap |> Map.containsKey(nodeKey))
+                        assert(neighborKeys |> Seq.forall (fun key -> graph.NodeMap |> Map.containsKey key))
+                        for neighborKey in neighborKeys do
+                            edges.[nodeKey, neighborKey] <- true
+                            edges.[neighborKey, nodeKey] <- true
+                    edges
+        }
+
+    /// Adds edges between the given node and the neighbor nodes with the given keys.
+    let addEdges nodeKey neighborKeys graph =
+        graph |> addManyEdges [ nodeKey, neighborKeys ]
+
+    let compress graph =
+        let newGraph =
+            create graph.NodeMap.Count
+        let newGraph, keyPairs =
+            ((newGraph, List.empty), graph |> getNodes)
+                ||> Seq.fold (fun (newGraph, keyPairs) (oldNodeKey, label) ->
+                    let newNodeKey, newGraph = newGraph |> getNextNodeKey
+                    let newGraph = newGraph |> addNode newNodeKey label
+                    let keyPairs = (oldNodeKey, newNodeKey) :: keyPairs
+                    newGraph, keyPairs)
+        let keyMap = keyPairs |> Map.ofSeq
+        let newGraph =
+            let newNeighborKeyPairs =
+                graph
+                    |> getEdges
+                    |> Seq.groupBy (fun edge -> edge.Item1)
+                    |> Seq.map (fun (oldNodeKey, group) ->
+                        let newNodeKey = keyMap.[oldNodeKey]
+                        let newNeighborKeys =
+                            group
+                                |> Seq.map (fun edge ->
+                                    keyMap.[edge.Item2])
+                                |> Seq.where (fun newNeighborKey ->
+                                    newNeighborKey > newNodeKey)
+                        newNodeKey, newNeighborKeys)
+            newGraph |> addManyEdges newNeighborKeyPairs
+        newGraph, keyMap
 
     /// https://www.wikiwand.com/en/Floyd%E2%80%93Warshall_algorithm
     let getDistances graph =
-        let nNodes = graph |> Graph.Nodes.count
+        let nNodes = graph |> nodeCount
         let result =
             Array2D.init nNodes nNodes (fun i j ->
                 if i = j then 0
                 else 2 * nNodes)   // larger than max possible distance between two nodes
         let nodeMap =
             graph
-                |> Graph.Nodes.toList
+                |> getNodes
                 |> Seq.mapi (fun i (key, _) -> key, i)
                 |> Map.ofSeq
-        for (key1, key2, _) in graph |> Graph.Edges.toList do
-            result.[nodeMap.[key1], nodeMap.[key2]] <- 1
+        for edge in graph |> getEdges do
+            result.[nodeMap.[edge.Item1], nodeMap.[edge.Item2]] <- 1
         for k = 0 to nNodes - 1 do
             for i = 0 to nNodes - 1 do
-                for j= 0 to nNodes - 1 do
+                for j = 0 to nNodes - 1 do
                     let sum = result.[i, k] + result.[k, j]
                     if result.[i, j] > sum then
                         result.[i, j] <- sum
         result, nodeMap
 
-module UndirectedGraph =
-
-    /// Answers the keys of the nodes adjacent to the node with
-    /// the given key in the given undirected graph.
-    let getNeighbors nodeKey (graph : Graph<_, _, _>) =
-        assert(
-            (graph |> Graph.Nodes.predecessors nodeKey) =
-                (graph |> Graph.Nodes.successors nodeKey))
-        match graph |> Graph.Nodes.predecessors nodeKey with
-            | Some neighbors ->
-                neighbors
-                    |> Seq.map fst
-                    |> Seq.toArray
-            | None -> failwith "Unexpected"
-
-    /// Creates undirected edges between the node with the given
-    /// key and the neighbor nodes with the given keys.
-    let createEdges nodeKey neighborKeys =
-        [
-            for neighborKey in neighborKeys do
-                yield neighborKey, nodeKey, ()
-                yield nodeKey, neighborKey, ()
-        ]
-
-/// Every node in a graph has a unique key.
-type NodeKey = int
-
 /// A color's palette position is its unique key (1-based).
 type ColorKey = int
 
-/// Every node in a Kami graph is labeled with a color. Edges are unlabeled.
-type KamiGraph = Graph<NodeKey, ColorKey, unit>
+/// Every node in a Kami graph is labeled with a color.
+type KamiGraph = Graph<ColorKey>
 
 module Kami2 =
 
@@ -156,8 +262,8 @@ module Kami2 =
                         |> Seq.findIndex (fun color ->
                             color = paletteColor))
 
-        /// Answers triangular coordinates adjacent to the given
-        /// coordinates. Example:
+        /// Answers triangular coordinates adjacent to the given coordinates.
+        /// Example:
         ///
         ///    1,1           2,1
         ///      \           /
@@ -167,7 +273,7 @@ module Kami2 =
         ///      /           \
         ///    1,3           2,3
         ///
-        let getAdjacentCoords x y =
+        let getAdjacentLocations x y =
             seq {
                 yield x, y - 1
                 yield x, y + 1
@@ -183,37 +289,39 @@ module Kami2 =
                 // is there a pair of adjancent nodes with the same color?
             let nodePairOpt =
                 graph
-                    |> Graph.Nodes.toList
-                    |> Seq.tryPick (fun (nodeKey1, colorKey) ->
+                    |> Graph.getNodes
+                    |> Seq.tryPick (fun (nodeKey1, colorKey1) ->
                         graph
-                            |> UndirectedGraph.getNeighbors nodeKey1
+                            |> Graph.getNeighbors nodeKey1
                             |> Seq.tryPick (fun nodeKey2 ->
-                                let _, colorKey2 =
+                                let colorKey2 =
                                     graph
-                                        |> Graph.Nodes.find nodeKey2
-                                if colorKey = colorKey2 then
-                                    Some (nodeKey1, nodeKey2, colorKey)
+                                        |> Graph.getLabel nodeKey2
+                                if colorKey1 = colorKey2 then
+                                    Some (nodeKey1, nodeKey2, colorKey1)
                                 else None))
 
                 // merge them
             match nodePairOpt with
                 | Some (nodeKeyKeep, nodeKeyRemove, colorKey) ->
+
+                        // find nodes that the kept node is already attached to
                     let nodeKeyKeepNeighbors =
                         [
                             yield nodeKeyKeep
                             yield! graph
-                                |> UndirectedGraph.getNeighbors nodeKeyKeep
+                                |> Graph.getNeighbors nodeKeyKeep
                         ] |> Set.ofSeq
-                    let edges =
+
+                        // do we need to attach the kept node to any of the removed node's neighbors?
+                    let newNeighborKeys =
                         graph
-                            |> UndirectedGraph.getNeighbors nodeKeyRemove
+                            |> Graph.getNeighbors nodeKeyRemove
                             |> Seq.where (fun nodeKey ->
-                                assert(nodeKey <> nodeKeyRemove)
                                 not <| nodeKeyKeepNeighbors.Contains(nodeKey))
-                            |> UndirectedGraph.createEdges nodeKeyKeep
                     graph
-                        |> Graph.Nodes.remove nodeKeyRemove
-                        |> Graph.Edges.addMany edges
+                        |> Graph.removeNode nodeKeyRemove
+                        |> Graph.addEdges nodeKeyKeep newNeighborKeys
                         |> simplify
                 | None -> graph
 
@@ -225,88 +333,99 @@ module Kami2 =
         let tiles = image |> Init.getTiles palette
 
             // create a node for each tile
-        let nodeTuples =
+        let locColors =
             tiles
                 |> Array2D.mapi (fun x y colorKey ->
                     (x, y), colorKey)
                 |> Seq.cast<(int * int) * ColorKey>
                 |> Seq.where (fun (_, colorKey) ->   // ignore background
                     colorKey > 0)
-                |> Seq.mapi (fun nodeKey (loc, colorKey) ->
-                    nodeKey, colorKey, loc)
                 |> Seq.toArray
-        let nodeMap : Map<NodeKey, _> =
-            nodeTuples
-                |> Seq.map (fun (nodeKey, _, loc) ->
-                    nodeKey, loc)
-                |> Map.ofSeq
-        let nodes =
-            nodeTuples
-                |> Seq.map (fun (nodeKey, colorKey, _) ->
-                    nodeKey, colorKey)
-                |> Seq.toList
+        let graph =
+            Graph.create<ColorKey> tiles.Length
+        let graph, keyLocs =
+            ((graph, List.empty), locColors)
+                ||> Seq.fold (fun (graph, keyLocs) (loc, colorKey) ->
+                    let nodeKey, graph =
+                        graph |> Graph.getNextNodeKey
+                    let graph =
+                        graph |> Graph.addNode nodeKey colorKey
+                    let keyLocs =
+                        (nodeKey, loc) :: keyLocs
+                    graph, keyLocs)
+        let keyLocMap =
+            keyLocs |> Map.ofSeq
 
             // create an edge for each pair of adjacent tiles
-        let edges =
-            let nodeMapInv =
-                nodeTuples
-                    |> Seq.map (fun (nodeKey, _, loc) ->
-                        loc, nodeKey)
-                    |> Map.ofSeq
-            [
-                for (KeyValue(nodeKey, (x, y))) in nodeMap do
-                    for loc in Init.getAdjacentCoords x y do
-                        match nodeMapInv |> Map.tryFind loc with
-                            | Some adjNodeKey ->
-                                yield nodeKey, adjNodeKey, ()
-                            | None -> ()
-            ]
-
-            // create graph
         let graph =
-            Graph.create nodes edges
-                |> Init.simplify
-        graph, nodeMap
+            let locKeyMap =
+                keyLocs
+                    |> Seq.map (fun (nodeKey, loc) -> loc, nodeKey)
+                    |> Map.ofSeq
+            let adjKeyPairs =
+                keyLocs
+                    |> Seq.map (fun (nodeKey, (x, y)) ->
+                        let adjNodeKeys =
+                            Init.getAdjacentLocations x y
+                                |> Seq.choose (fun adjLoc ->
+                                    locKeyMap |> Map.tryFind adjLoc)
+                        nodeKey, adjNodeKeys)
+            graph |> Graph.addManyEdges adjKeyPairs
 
-    /// Fills the given node in the given graph with the given color.
+        let graph, keyMap =
+            graph
+                |> Init.simplify
+                |> Graph.compress
+        let keyLocMap =
+            keyLocMap
+                |> Map.toSeq
+                |> Seq.choose (fun (oldNodeKey, loc) ->
+                    keyMap
+                        |> Map.tryFind oldNodeKey
+                        |> Option.map (fun newNodeKey ->
+                            newNodeKey, loc))
+                |> Map.ofSeq
+        graph, keyLocMap
+
+    /// Fills the given node in the given graph with the given color, which merges
+    /// it with neighboring nodes of the same color.
     let fill nodeKey colorKey (graph : KamiGraph) : (KamiGraph * int (*num nodes removed*)) =
 
-            // find nodes to be replaced
+            // determine nodes to be merged
         let nodeKeys =
             graph
-                |> UndirectedGraph.getNeighbors nodeKey
+                |> Graph.getNeighbors nodeKey
                 |> Seq.map (fun neighborKey ->
-                    graph |> Graph.Nodes.find neighborKey)
+                    let label = graph |> Graph.getLabel neighborKey
+                    neighborKey, label)
                 |> Seq.where (fun (_, neighborColorKey) ->
                     neighborColorKey = colorKey)
                 |> Seq.map fst
                 |> Set.ofSeq
                 |> Set.add nodeKey
 
-            // find the merged node's neighbors
+            // find the merged nodes' neighbors
         let neighborKeys =
             nodeKeys
                 |> Seq.collect (fun nodeKey ->
-                    graph |> UndirectedGraph.getNeighbors nodeKey)
+                    graph |> Graph.getNeighbors nodeKey)
                 |> Seq.distinct
                 |> Seq.where (nodeKeys.Contains >> not)
                 |> Seq.toArray
         assert(
             neighborKeys |>
                 Seq.forall (fun neighborKey ->
-                    let _, neighborColorKey =
-                        graph |> Graph.Nodes.find neighborKey
+                    let neighborColorKey =
+                        graph |> Graph.getLabel neighborKey
                     neighborColorKey <> colorKey))
 
             // merge the same-color nodes together
-        let graph' =
-            let edges =
-                neighborKeys |> UndirectedGraph.createEdges nodeKey
+        let graph =
             graph
-                |> Graph.Nodes.removeMany (nodeKeys |> Seq.toList)
-                |> Graph.Nodes.add (nodeKey, colorKey)
-                |> Graph.Edges.addMany edges
-        graph', nodeKeys.Count - 1
+                |> Graph.removeManyNodes (nodeKeys |> Seq.toList)
+                |> Graph.addNode nodeKey colorKey
+                |> Graph.addEdges nodeKey neighborKeys
+        graph, nodeKeys.Count - 1
 
     /// Attempts to solve the given graph in the given number of moves.
     let solve nMoves nodeMap (graph : KamiGraph) =
@@ -315,14 +434,14 @@ module Kami2 =
             let distances, nodeMap =
                 graph |> Graph.getDistances
             graph
-                |> Graph.Nodes.toList
+                |> Graph.getNodes
                 |> Seq.map (fun (nodeKey, _) ->
                     let maxDist =
                         distances.[nodeMap.[nodeKey], *] |> Seq.max
                     let nNeighbors =
                         graph
-                            |> UndirectedGraph.getNeighbors nodeKey
-                            |> Array.length
+                            |> Graph.getNeighbors nodeKey
+                            |> Seq.length
                     nodeKey, maxDist, nNeighbors)
                 |> Seq.sortBy (fun (_, maxDist, nNeighbors) ->
                     maxDist, -nNeighbors)
@@ -336,7 +455,8 @@ module Kami2 =
                 // find remaining colors
             let nodes =
                 graph
-                    |> Graph.Nodes.toList
+                    |> Graph.getNodes
+                    |> Seq.toArray
             let colorKeys =
                 nodes
                     |> Seq.map snd
