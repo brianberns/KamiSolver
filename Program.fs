@@ -54,6 +54,7 @@ type Graph<'label> =
     {
         NodeMap : Map<int, 'label>
         Edges : bool[,]
+        InTransaction : bool
         NextNodeKey : int
         MaxNodeKeys : int
     }
@@ -70,6 +71,7 @@ module Graph =
             Edges =
                 Array2D.init maxNodeKeys maxNodeKeys (fun _ _ ->
                     false)
+            InTransaction = false
             NextNodeKey = 0
             MaxNodeKeys = maxNodeKeys
         }
@@ -122,6 +124,23 @@ module Graph =
                     graph.NodeMap |> Map.add nodeKey label
         }
 
+    let private getWritableEdges graph =
+        if graph.InTransaction then graph.Edges
+        else graph.Edges |> Array2D.copy
+
+    let beginTransaction graph =
+        {
+            graph with
+                Edges = graph |> getWritableEdges
+                InTransaction = true
+        }
+
+    let endTransaction graph =
+        {
+            graph with
+                InTransaction = false
+        }
+
     let removeManyNodes nodeKeys graph =
         {
             graph with
@@ -130,7 +149,7 @@ module Graph =
                         ||> Seq.fold (fun nodeMap nodeKey ->
                             nodeMap |> Map.remove nodeKey)
                 Edges =
-                    let edges = graph.Edges |> Array2D.copy
+                    let edges = graph |> getWritableEdges
                     for nodeKey in nodeKeys do
                         for i = 0 to graph.MaxNodeKeys - 1 do
                             edges.[nodeKey, i] <- false
@@ -145,7 +164,7 @@ module Graph =
         {
             graph with
                 Edges =
-                    let edges = graph.Edges |> Array2D.copy   // wasteful if neighbor keys is actually empty
+                    let edges = graph |> getWritableEdges
                     for nodeKey, neighborKeys in neighborKeyPairs do
                         assert(graph.NodeMap |> Map.containsKey(nodeKey))
                         assert(neighborKeys |> Seq.forall (fun key -> graph.NodeMap |> Map.containsKey key))
@@ -422,9 +441,11 @@ module Kami2 =
             // merge the same-color nodes together
         let graph =
             graph
+                |> Graph.beginTransaction
                 |> Graph.removeManyNodes (nodeKeys |> Seq.toList)
                 |> Graph.addNode nodeKey colorKey
                 |> Graph.addEdges nodeKey neighborKeys
+                |> Graph.endTransaction
         graph, nodeKeys.Count - 1
 
     /// Attempts to solve the given graph in the given number of moves.
