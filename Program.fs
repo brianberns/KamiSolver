@@ -579,27 +579,30 @@ module Kami2 =
 [<EntryPoint>]
 let main argv =
 
-        // construct graph from image
-    use image = new Bitmap(argv.[0])
-    let nColors = argv.[1] |> Int32.Parse
-    let graph, nodeMap = Kami2.createGraph image nColors
+    if argv.Length <> 3 then
+        printfn "Usage: KamiSolver Puzzle.png numColors numMoves"
+    else
+            // construct graph from image
+        use image = new Bitmap(argv.[0])
+        let nColors = argv.[1] |> Int32.Parse
+        let graph, nodeMap = Kami2.createGraph image nColors
 
-        // solve graph
-    let nMoves = argv.[2] |> Int32.Parse
-    let dtStart = DateTime.Now
-    match graph |> Kami2.solve nMoves nodeMap with
-        | Some moves ->
-            printfn ""
-            printfn "Solution:"
-            for (nodeKey, colorKey) in moves do
-                printfn
-                    "   at %A put color %A"
-                    nodeMap.[nodeKey]
-                    colorKey
-        | None ->
-            printfn ""
-            printfn "No solution"
-    printfn ""
-    printfn "%A" (DateTime.Now - dtStart)
+            // solve graph
+        let nMoves = argv.[2] |> Int32.Parse
+        let dtStart = DateTime.Now
+        match graph |> Kami2.solve nMoves nodeMap with
+            | Some moves ->
+                printfn ""
+                printfn "Solution:"
+                for (nodeKey, colorKey) in moves do
+                    printfn
+                        "   at %A put color %A"
+                        nodeMap.[nodeKey]
+                        colorKey
+            | None ->
+                printfn ""
+                printfn "No solution"
+        printfn ""
+        printfn "%A" (DateTime.Now - dtStart)
 
     0
