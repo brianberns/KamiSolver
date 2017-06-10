@@ -51,21 +51,32 @@ module Bitmap =
                             yield bitmap.GetPixel(x', y')
         |] |> Color.average
 
+type NodeKey = int
+type Node<'label> = NodeKey * 'label
+type Edge = ValueTuple<NodeKey, NodeKey>
+
+/// Undirected graph where each node has a label.
 type Graph<'label> =
     {
-        NodeMap : Map<int, 'label>
+        /// Labeled nodes.
+        NodeMap : Map<NodeKey, 'label>
+
+        /// 2D matrix of edges.
         Edges : BitArray
+
+        /// Indicates whether Edges array can be written to.
         InTransaction : bool
+
+        /// Next unallocated node key.
         NextNodeKey : int
+
+        /// Maximum number of nodes allowed in this graph.
         MaxNodeKeys : int
     }
 
-type Node<'label> = int * 'label
-
-type Edge = ValueTuple<int, int>
-
 module Graph =
 
+    /// Creates an empty graph with the given capacity.
     let create<'label> (maxNodeKeys : int) =
         {
             NodeMap = Map.empty<int, 'label>
@@ -75,24 +86,32 @@ module Graph =
             MaxNodeKeys = maxNodeKeys
         }
 
+    /// Number of nodes in the given graph.
     let nodeCount graph =
         graph.NodeMap.Count
 
+    /// Answers the nodes in the given graph.
     let getNodes graph : seq<Node<_>> =
         graph.NodeMap
             |> Map.toSeq
 
+    /// Answers the keys of the nodes in the given graph.
     let private getNodeKeys graph =
         graph
             |> getNodes
             |> Seq.map fst
 
+    /// Answers the index of the potential edge between the
+    /// given nodes in the given graph.
     let private getEdgeIndex i j graph =
         (i * graph.MaxNodeKeys) + j
 
+    /// Indicates whether there is an edge between the given
+    /// nodes in the given graph.
     let private getEdge i j graph =
         graph.Edges.[graph |> getEdgeIndex i j]
 
+    /// Answers the edges in the given graph.
     let getEdges graph : seq<Edge> =
         let nodeKeys = graph |> getNodeKeys
         seq {
@@ -102,15 +121,19 @@ module Graph =
                         yield ValueTuple<_, _>(i, j)
         }
 
+    /// Answers the label of the given node in the given graph.
     let getLabel nodeKey graph =
         graph.NodeMap.[nodeKey]
 
+    /// Answers the keys of the nodes connected to the given node
+    /// in the given graph.
     let getNeighbors nodeKey graph =
         graph
             |> getNodeKeys
             |> Seq.where (fun neighborKey ->
                 graph |> getEdge nodeKey neighborKey)
 
+    /// Allocates a node key from the given graph.
     let getNextNodeKey graph =
         let graph' =
             {
@@ -119,6 +142,7 @@ module Graph =
             }
         graph.NextNodeKey, graph'
 
+    /// Adds a node to the given graph.
     let addNode nodeKey label graph =
         assert(nodeKey >= 0)
         assert(nodeKey < graph.MaxNodeKeys)
@@ -129,10 +153,12 @@ module Graph =
                     graph.NodeMap |> Map.add nodeKey label
         }
 
+    /// Performance optimization for reducing array allocations.
     let private getWritableEdges graph =
         if graph.InTransaction then graph.Edges
         else BitArray(graph.Edges)
 
+    /// Performance optimization for reducing array allocations.
     let beginTransaction graph =
         {
             graph with
@@ -140,12 +166,14 @@ module Graph =
                 InTransaction = true
         }
 
+    /// Performance optimization for reducing array allocations.
     let endTransaction graph =
         {
             graph with
                 InTransaction = false
         }
 
+    /// Removes the given nodes from the given graph.
     let removeManyNodes nodeKeys graph =
         {
             graph with
@@ -162,10 +190,12 @@ module Graph =
                     edges
         }
 
+    /// Removes the given node from the given graph.
     let removeNode nodeKey graph =
         graph |> removeManyNodes [ nodeKey ]
 
-    let addManyEdges (neighborKeyPairs : seq<int * seq<int>>) graph =
+    /// Adds the given edges to the given graph.
+    let addManyEdges neighborKeyPairs graph =
         {
             graph with
                 Edges =
@@ -179,10 +209,13 @@ module Graph =
                     edges
         }
 
-    /// Adds edges between the given node and the neighbor nodes with the given keys.
+    /// Adds edges between the given node and the neighbor nodes
+    /// with the given keys.
     let addEdges nodeKey neighborKeys graph =
         graph |> addManyEdges [ nodeKey, neighborKeys ]
 
+    /// Performance optimization: Rebuilds the given graph with
+    /// minimal memory usage.
     let compress graph =
         let newGraph =
             create graph.NodeMap.Count
@@ -211,6 +244,7 @@ module Graph =
             newGraph |> addManyEdges newNeighborKeyPairs
         newGraph, keyMap
 
+    /// Answers the distance between every pair of nodes in the given graph.
     /// https://www.wikiwand.com/en/Floyd%E2%80%93Warshall_algorithm
     let getDistances graph =
         let nNodes = graph |> nodeCount
@@ -435,7 +469,6 @@ module Kami2 =
                     graph |> Graph.getNeighbors nodeKey)
                 |> Seq.distinct
                 |> Seq.where (nodeKeys.Contains >> not)
-                |> Seq.toArray
         assert(
             neighborKeys |>
                 Seq.forall (fun neighborKey ->
@@ -522,7 +555,7 @@ module Kami2 =
                                     iMove, move, graph', delta)
                                 |> Seq.tryPick (fun (iMove, move, graph', delta) ->  
 
-                                    if level <= 1 && freedom >= 2 then
+                                    if level <= 3 && freedom >= 2 then
                                         let nMoves =
                                             nodes.Length * (colorKeys.Length - 1)
                                         printfn "%sLevel %d: %4.1f%% complete, node %A, color %A"
