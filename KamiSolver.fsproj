@@ -63,10 +63,10 @@
     <None Include="Puzzles\kIu1kIkNMD.png" />
     <None Include="Puzzles\wT2XpZqNMD.png" />
     <None Include="Puzzles\bVnOS7X8MD.png" />
+    <Content Include="packages.config" />
     <None Include="App.config" />
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Program.fs" />
-    <Content Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="FSharp.Core">

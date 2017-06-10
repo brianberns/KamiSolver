@@ -1,4 +1,5 @@
 ﻿open System
+open System.Collections
 open System.Drawing
 
 module Color =
@@ -53,7 +54,7 @@ module Bitmap =
 type Graph<'label> =
     {
         NodeMap : Map<int, 'label>
-        Edges : bool[,]
+        Edges : BitArray
         InTransaction : bool
         NextNodeKey : int
         MaxNodeKeys : int
@@ -65,12 +66,10 @@ type Edge = ValueTuple<int, int>
 
 module Graph =
 
-    let create<'label> maxNodeKeys =
+    let create<'label> (maxNodeKeys : int) =
         {
             NodeMap = Map.empty<int, 'label>
-            Edges =
-                Array2D.init maxNodeKeys maxNodeKeys (fun _ _ ->
-                    false)
+            Edges = BitArray(maxNodeKeys * maxNodeKeys)
             InTransaction = false
             NextNodeKey = 0
             MaxNodeKeys = maxNodeKeys
@@ -88,12 +87,18 @@ module Graph =
             |> getNodes
             |> Seq.map fst
 
+    let private getEdgeIndex i j graph =
+        (i * graph.MaxNodeKeys) + j
+
+    let private getEdge i j graph =
+        graph.Edges.[graph |> getEdgeIndex i j]
+
     let getEdges graph : seq<Edge> =
         let nodeKeys = graph |> getNodeKeys
         seq {
             for i in nodeKeys do
                 for j in nodeKeys do
-                    if graph.Edges.[i, j] then
+                    if graph |> getEdge i j then
                         yield ValueTuple<_, _>(i, j)
         }
 
@@ -101,10 +106,10 @@ module Graph =
         graph.NodeMap.[nodeKey]
 
     let getNeighbors nodeKey graph =
-        let slice = graph.Edges.[nodeKey, *]
         graph
             |> getNodeKeys
-            |> Seq.where (fun nodeKey -> slice.[nodeKey])
+            |> Seq.where (fun neighborKey ->
+                graph |> getEdge nodeKey neighborKey)
 
     let getNextNodeKey graph =
         let graph' =
@@ -126,7 +131,7 @@ module Graph =
 
     let private getWritableEdges graph =
         if graph.InTransaction then graph.Edges
-        else graph.Edges |> Array2D.copy
+        else BitArray(graph.Edges)
 
     let beginTransaction graph =
         {
@@ -152,8 +157,8 @@ module Graph =
                     let edges = graph |> getWritableEdges
                     for nodeKey in nodeKeys do
                         for i = 0 to graph.MaxNodeKeys - 1 do
-                            edges.[nodeKey, i] <- false
-                            edges.[i, nodeKey] <- false
+                            edges.[graph |> getEdgeIndex nodeKey i] <- false
+                            edges.[graph |> getEdgeIndex i nodeKey] <- false
                     edges
         }
 
@@ -169,8 +174,8 @@ module Graph =
                         assert(graph.NodeMap |> Map.containsKey(nodeKey))
                         assert(neighborKeys |> Seq.forall (fun key -> graph.NodeMap |> Map.containsKey key))
                         for neighborKey in neighborKeys do
-                            edges.[nodeKey, neighborKey] <- true
-                            edges.[neighborKey, nodeKey] <- true
+                            edges.[graph |> getEdgeIndex nodeKey neighborKey] <- true
+                            edges.[graph |> getEdgeIndex neighborKey nodeKey] <- true
                     edges
         }
 
