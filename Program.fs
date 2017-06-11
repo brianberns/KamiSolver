@@ -583,10 +583,23 @@ let main argv =
         printfn "Usage: KamiSolver Puzzle.png numColors numMoves"
     else
             // construct graph from image
-        use image = new Bitmap(argv.[0])
-        let nColors = argv.[1] |> Int32.Parse
-        let graph, nodeMap = Kami2.createGraph image nColors
+        let graph, nodeMap =
+            use image = new Bitmap(argv.[0])
+            let nColors = argv.[1] |> Int32.Parse
+            Kami2.createGraph image nColors
 
+#if DEBUG
+        printfn ""
+        let counts =
+            graph
+                |> Graph.getNodes
+                |> Seq.groupBy snd
+                |> Seq.map (fun (colorKey, group) -> colorKey, group |> Seq.length)
+                |> Seq.sortBy fst
+        for colorKey, count in counts do
+            printfn "Color %A: %A nodes" colorKey count
+        printfn ""
+#endif
             // solve graph
         let nMoves = argv.[2] |> Int32.Parse
         let dtStart = DateTime.Now
