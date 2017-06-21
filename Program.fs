@@ -531,9 +531,22 @@ module Kami2 =
                 let freedom = nMovesRemaining - colorKeys.Length + 1
                 if freedom < 0 then None
                 else
+                    let minPriority =
+                        priorityMap
+                            |> Map.toSeq
+                            |> Seq.map snd
+                            |> Seq.min
                     nodes
-                        |> Seq.sortBy (fun (nodeKey, _) -> priorityMap.[nodeKey])
-                        |> Seq.mapi (fun iNode node -> iNode, node)
+                        |> Seq.map (fun (nodeKey, colorKey) ->
+                            nodeKey, colorKey, priorityMap.[nodeKey])
+                        (*
+                        |> Seq.where (fun (nodeKey, _, priority) ->
+                            priority - minPriority <= 4)
+                        *)
+                        |> Seq.sortBy (fun (_, _, priority) ->
+                            priority)
+                        |> Seq.mapi (fun iNode (nodeKey, colorKey, _) ->
+                            iNode, (nodeKey, colorKey))
                         |> Seq.tryPick (fun (iNode, (nodeKey, curColorKey)) ->
 
                             let level = nMoves - nMovesRemaining
@@ -555,7 +568,7 @@ module Kami2 =
                                     iMove, move, graph', delta)
                                 |> Seq.tryPick (fun (iMove, move, graph', delta) ->  
 
-                                    if level <= 3 && freedom >= 2 then
+                                    if level <= 1 && freedom >= 2 then
                                         let nMoves =
                                             nodes.Length * (colorKeys.Length - 1)
                                         printfn "%sLevel %d: %4.1f%% complete, node %A, color %A"
