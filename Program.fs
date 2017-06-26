@@ -489,6 +489,7 @@ module Kami2 =
     /// Attempts to solve the given graph in the given number of moves.
     let solve nMoves nodeMap (graph : KamiGraph) =
 
+            // rank nodes by centrality and connectedness
         let priorityMap =
             let distances, nodeMap =
                 graph |> Graph.getDistances
