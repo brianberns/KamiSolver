@@ -118,7 +118,7 @@ module Graph =
             for i in nodeKeys do
                 for j in nodeKeys do
                     if graph |> getEdge i j then
-                        yield ValueTuple<_, _>(i, j)
+                        yield struct (i, j)
         }
 
     /// Answers the label of the given node in the given graph.
@@ -231,13 +231,13 @@ module Graph =
             let newNeighborKeyPairs =
                 graph
                     |> getEdges
-                    |> Seq.groupBy (fun edge -> edge.Item1)
+                    |> Seq.groupBy (fun struct (oldNodeKey, _) -> oldNodeKey)
                     |> Seq.map (fun (oldNodeKey, group) ->
                         let newNodeKey = keyMap.[oldNodeKey]
                         let newNeighborKeys =
                             group
-                                |> Seq.map (fun edge ->
-                                    keyMap.[edge.Item2])
+                                |> Seq.map (fun struct (_, oldNodeKey) ->
+                                    keyMap.[oldNodeKey])
                                 |> Seq.where (fun newNeighborKey ->
                                     newNeighborKey > newNodeKey)
                         newNodeKey, newNeighborKeys)
@@ -257,8 +257,8 @@ module Graph =
                 |> getNodes
                 |> Seq.mapi (fun i (key, _) -> key, i)
                 |> Map.ofSeq
-        for edge in graph |> getEdges do
-            result.[nodeMap.[edge.Item1], nodeMap.[edge.Item2]] <- 1
+        for struct (nodeKey1, nodeKey2) in graph |> getEdges do
+            result.[nodeMap.[nodeKey1], nodeMap.[nodeKey2]] <- 1
         for k = 0 to nNodes - 1 do
             for i = 0 to nNodes - 1 do
                 for j = 0 to nNodes - 1 do
