@@ -489,26 +489,7 @@ module Kami2 =
     /// Attempts to solve the given graph in the given number of moves.
     let solve nMoves nodeMap (graph : KamiGraph) =
 
-            // rank nodes by centrality and connectedness
-        let priorityMap =
-            let distances, nodeMap =
-                graph |> Graph.getDistances
-            graph
-                |> Graph.getNodes
-                |> Seq.map (fun (nodeKey, _) ->
-                    let maxDist =
-                        distances.[nodeMap.[nodeKey], *] |> Seq.max
-                    let nNeighbors =
-                        graph
-                            |> Graph.getNeighbors nodeKey
-                            |> Seq.length
-                    nodeKey, maxDist, nNeighbors)
-                |> Seq.sortBy (fun (_, maxDist, nNeighbors) ->
-                    maxDist, -nNeighbors)
-                |> Seq.mapi (fun i (nodeKey, _, _) -> nodeKey, i)
-                |> Map.ofSeq
-
-        let rec loop nMovesRemaining (graph : KamiGraph) =
+        let rec loop nodeKey nMovesRemaining (graph : KamiGraph) =
             assert(nMovesRemaining >= 0)
             assert(nMoves >= nMovesRemaining)
 
@@ -532,50 +513,45 @@ module Kami2 =
                 let freedom = nMovesRemaining - colorKeys.Length + 1
                 if freedom < 0 then None
                 else
-                    nodes
-                        |> Seq.sortBy (fun (nodeKey, _) -> priorityMap.[nodeKey])
-                        |> Seq.mapi (fun iNode node -> iNode, node)
-                        |> Seq.tryPick (fun (iNode, (nodeKey, curColorKey)) ->
+                    let curColorKey = graph.NodeMap.[nodeKey]
+                    colorKeys
+                        |> Array.where (fun newColorKey ->
+                            newColorKey <> curColorKey)
+                        |> Array.Parallel.map (fun newColorKey ->
+                            let graph', delta =
+                                graph
+                                    |> fill nodeKey newColorKey
+                            newColorKey, graph', delta)
+                        |> Array.tryPick (fun (newColorKey, graph', delta) ->  
+                            if delta <= 0 then
+                                assert(delta = 0)
+                                None
+                            else
+                                graph'
+                                    |> loop nodeKey (nMovesRemaining - 1)
+                                    |> Option.map (fun moveList ->
+                                        (nodeKey, newColorKey) :: moveList))
 
-                            let level = nMoves - nMovesRemaining
-
-                            let moves =
-                                colorKeys
-                                    |> Seq.where (fun newColorKey ->
-                                        newColorKey <> curColorKey)
-                                    |> Seq.map (fun newColorKey ->
-                                        nodeKey, newColorKey)
-                                    |> Seq.toArray
-
-                            moves
-                                |> Array.Parallel.mapi (fun iMove move ->
-                                    let nodeKey, newColorKey = move
-                                    let graph', delta =
-                                        graph
-                                            |> fill nodeKey newColorKey
-                                    iMove, move, graph', delta)
-                                |> Seq.tryPick (fun (iMove, move, graph', delta) ->  
-
-                                    if level <= 3 && freedom >= 2 then
-                                        let nMoves =
-                                            nodes.Length * (colorKeys.Length - 1)
-                                        printfn "%sLevel %d: %4.1f%% complete, node %A, color %A"
-                                            (String(' ', 3 * level))
-                                            level
-                                            (100.0 * float ((iNode * moves.Length) + iMove) / float nMoves)
-                                            (nodeMap |> Map.find nodeKey)
-                                            (snd move)
-
-                                    if delta <= 0 then
-                                        assert(delta = 0)
-                                        None
-                                    else
-                                        graph'
-                                            |> loop (nMovesRemaining - 1)
-                                            |> Option.map (fun moveList ->
-                                                move :: moveList)))
-
-        graph |> loop nMoves
+            // rank nodes by centrality and connectedness
+        let distances, distNodeMap =
+            graph |> Graph.getDistances
+        graph
+            |> Graph.getNodes
+            |> Seq.map (fun node ->
+                let nodeKey, _ = node
+                let maxDist =
+                    distances.[distNodeMap.[nodeKey], *] |> Seq.max
+                let nNeighbors =
+                    graph
+                        |> Graph.getNeighbors nodeKey
+                        |> Seq.length
+                nodeKey, maxDist, nNeighbors)
+            |> Seq.sortBy (fun (_, maxDist, nNeighbors) ->
+                maxDist, -nNeighbors)
+            |> Seq.map (fun (nodeKey, _, _) -> nodeKey)
+            |> Seq.tryPick (fun nodeKey ->
+                printfn "%A" (nodeMap |> Map.find nodeKey)
+                graph |> loop nodeKey nMoves)
 
 [<EntryPoint>]
 let main argv =
