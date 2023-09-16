@@ -1,91 +1,26 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="14.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
-  <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>64e6bca0-fe97-4b26-a0ba-8ee018fcaf53</ProjectGuid>
-    <OutputType>Exe</OutputType>
-    <RootNamespace>KamiSolver</RootNamespace>
-    <AssemblyName>KamiSolver</AssemblyName>
-    <TargetFrameworkVersion>v4.7</TargetFrameworkVersion>
-    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
-    <TargetFSharpCoreVersion>4.4.0.0</TargetFSharpCoreVersion>
-    <Name>KamiSolver</Name>
-    <TargetFrameworkProfile />
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <Tailcalls>true</Tailcalls>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <WarningLevel>3</WarningLevel>
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <DocumentationFile>bin\Debug\KamiSolver.XML</DocumentationFile>
-    <Prefer32Bit>true</Prefer32Bit>
-    <StartArguments>..\..\Puzzles\kcLcgboNMD.png 5 6</StartArguments>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <Tailcalls>true</Tailcalls>
-    <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <WarningLevel>3</WarningLevel>
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <DocumentationFile>bin\Release\KamiSolver.XML</DocumentationFile>
-    <Prefer32Bit>true</Prefer32Bit>
-    <StartArguments>"C:\Users\Brian Berns\Dropbox\Camera Uploads\2018-06-03 10.20.28.png" 5 19</StartArguments>
-  </PropertyGroup>
-  <PropertyGroup>
-    <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
-  </PropertyGroup>
-  <Choose>
-    <When Condition="'$(VisualStudioVersion)' == '11.0'">
-      <PropertyGroup Condition="Exists('$(MSBuildExtensionsPath32)\..\Microsoft SDKs\F#\3.0\Framework\v4.0\Microsoft.FSharp.Targets')">
-        <FSharpTargetsPath>$(MSBuildExtensionsPath32)\..\Microsoft SDKs\F#\3.0\Framework\v4.0\Microsoft.FSharp.Targets</FSharpTargetsPath>
-      </PropertyGroup>
-    </When>
-    <Otherwise>
-      <PropertyGroup Condition="Exists('$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\FSharp\Microsoft.FSharp.Targets')">
-        <FSharpTargetsPath>$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\FSharp\Microsoft.FSharp.Targets</FSharpTargetsPath>
-      </PropertyGroup>
-    </Otherwise>
-  </Choose>
-  <Import Project="$(FSharpTargetsPath)" />
-  <ItemGroup>
-    <None Include="Puzzles\9k2yOauNMD.png" />
-    <None Include="Puzzles\DVrgMXaNMD.png" />
-    <None Include="Puzzles\gVvmdc5MMD.png" />
-    <None Include="Puzzles\kcLcgboNMD.png" />
-    <None Include="Puzzles\kIu1kIkNMD.png" />
-    <None Include="Puzzles\wT2XpZqNMD.png" />
-    <None Include="Puzzles\bVnOS7X8MD.png" />
-    <Content Include="packages.config" />
-    <None Include="App.config" />
-    <Compile Include="AssemblyInfo.fs" />
-    <Compile Include="Program.fs" />
-  </ItemGroup>
-  <ItemGroup>
-    <Reference Include="FSharp.Core">
-      <HintPath>packages\FSharp.Core.4.3.4\lib\net45\FSharp.Core.dll</HintPath>
-    </Reference>
-    <Reference Include="mscorlib" />
-    <Reference Include="PresentationCore" />
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.Numerics" />
-    <Reference Include="WindowsBase" />
-  </ItemGroup>
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
-       Other similar extension points exist, see Microsoft.Common.targets.
-  <Target Name="BeforeBuild">
-  </Target>
-  <Target Name="AfterBuild">
-  </Target>
-  -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net7.0</TargetFramework>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Compile Include="Program.fs" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Content Include="Puzzles\9k2yOauNMD.png" />
+	  <Content Include="Puzzles\bVnOS7X8MD.png" />
+	  <Content Include="Puzzles\DVrgMXaNMD.png" />
+	  <Content Include="Puzzles\gVvmdc5MMD.png" />
+	  <Content Include="Puzzles\kcLcgboNMD.png" />
+	  <Content Include="Puzzles\kIu1kIkNMD.png" />
+	  <Content Include="Puzzles\wT2XpZqNMD.png" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="System.Drawing.Common" Version="7.0.0" />
+	</ItemGroup>
+
 </Project>
