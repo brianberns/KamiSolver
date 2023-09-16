@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
@@ -6,17 +6,8 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<Compile Include="Program.fs" />
-	</ItemGroup>
-
-	<ItemGroup>
-	  <Content Include="Puzzles\9k2yOauNMD.png" />
-	  <Content Include="Puzzles\bVnOS7X8MD.png" />
-	  <Content Include="Puzzles\DVrgMXaNMD.png" />
-	  <Content Include="Puzzles\gVvmdc5MMD.png" />
-	  <Content Include="Puzzles\kcLcgboNMD.png" />
-	  <Content Include="Puzzles\kIu1kIkNMD.png" />
-	  <Content Include="Puzzles\wT2XpZqNMD.png" />
+	  <Content Include="Puzzles\*.png" />
+	  <Compile Include="Program.fs" />
 	</ItemGroup>
 
 	<ItemGroup>
